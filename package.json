@@ -16,11 +16,11 @@
   },
   "license": "BSD-2-Clause",
   "type": "commonjs",
-  "main": "./lib/index.js",
+  "main": "./dist/commonmark.js",
   "module": "./lib/index.js",
   "exports": {
     ".": {
-      "require": "./lib/index.js",
+      "require": "./dist/commonmark.js",
       "default": "./lib/index.js"
     }
   },
@@ -35,9 +35,8 @@
   "dependencies": {
     "entities": "~2.0",
     "mdurl": "~1.0.1",
-    "minimist": ">=1.2.2",
     "string.prototype.repeat": "^0.2.0",
-    "xregexp": "^4.3.0"
+    "minimist": ">=1.2.2"
   },
   "directories": {
     "lib": "./lib"

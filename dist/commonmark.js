@@ -1,4 +1,3 @@
-/* commonmark 0.29 https://github.com/commonmark/commonmark.js @license BSD3 */
 (function (global, factory) {
     typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
     typeof define === 'function' && define.amd ? define(['exports'], factory) :
@@ -11,12 +10,22 @@
             case "block_quote":
             case "list":
             case "item":
+            case "table":
+            case "table_row":
+            case "table_cell":
             case "paragraph":
             case "heading":
             case "emph":
             case "strong":
+            case "del":
             case "link":
             case "image":
+            case "at_mention":
+            case "channel_link":
+            case "emoji":
+            case "hashtag":
+            case "mention_highlight":
+            case "search_highlight":
             case "custom_inline":
             case "custom_block":
                 return true;
@@ -80,24 +89,93 @@
         this._next = null;
         this._sourcepos = sourcepos;
         this._lastLineBlank = false;
-        this._lastLineChecked = false;
         this._open = true;
         this._string_content = null;
         this._literal = null;
         this._listData = {};
         this._info = null;
         this._destination = null;
+        this._size = null;
         this._title = null;
         this._isFenced = false;
         this._fenceChar = null;
         this._fenceLength = 0;
         this._fenceOffset = null;
         this._level = null;
+        this._mentionName = null;
+        this._emojiName = null;
+        this._hashtag = null;
+
+        // used by tables
+        this._alignColumns = [];
+        this._isHeading = false;
+        this._align = '';
+
         this._onEnter = null;
         this._onExit = null;
     };
 
     var proto = Node.prototype;
+
+    Object.defineProperty(proto, "size", {
+        get: function() {
+            return this._size;
+        },
+        set: function(s) {
+            this._size = s;
+        }
+    });
+
+    Object.defineProperty(proto, "mentionName", {
+        get: function() {
+            return this._mentionName;
+        },
+    });
+
+    Object.defineProperty(proto, "channelName", {
+        get: function() {
+            return this._channelName;
+        },
+    });
+
+    Object.defineProperty(proto, "emojiName", {
+        get: function() {
+            return this._emojiName;
+        },
+    });
+
+    Object.defineProperty(proto, "hashtag", {
+        get: function() {
+            return this._hashtag;
+        },
+    });
+
+    Object.defineProperty(proto, "alignColumns", {
+        get: function() {
+            return this._alignColumns;
+        },
+        set: function(s) {
+            this._alignColumns = s;
+        }
+    });
+
+    Object.defineProperty(proto, "isHeading", {
+        get: function() {
+            return this._isHeading;
+        },
+        set: function(t) {
+            this._isHeading = t;
+        }
+    });
+
+    Object.defineProperty(proto, "align", {
+        get: function() {
+            return this._align;
+        },
+        set: function(s) {
+            this._align = s;
+        }
+    });
 
     Object.defineProperty(proto, "isContainer", {
         get: function() {
@@ -7479,7 +7557,11 @@
 
     var XMLSPECIAL = '[&<>"]';
 
+    var reXmlSpecialTest = new RegExp(XMLSPECIAL);
+
     var reXmlSpecial = new RegExp(XMLSPECIAL, "g");
+
+    var reXmlSpecialOrEntity = new RegExp(ENTITY + '|' + XMLSPECIAL, 'gi');
 
     var unescapeChar = function(s) {
         if (s.charCodeAt(0) === C_BACKSLASH) {
@@ -7498,7 +7580,12 @@
         }
     };
 
+    var reWWW = /^www\d{0,3}\./i;
     var normalizeURI = function(uri) {
+        if (reWWW.test(uri)) {
+            uri = 'http://' + uri;
+        }
+
         try {
             return encode_1(uri);
         } catch (err) {
@@ -7521,9 +7608,13 @@
         }
     };
 
-    var escapeXml = function(s) {
-        if (reXmlSpecial.test(s)) {
-            return s.replace(reXmlSpecial, replaceUnsafeChar);
+    var escapeXml = function(s, preserve_entities) {
+        if (reXmlSpecialTest.test(s)) {
+            if (preserve_entities) {
+                return s.replace(reXmlSpecialOrEntity, replaceUnsafeChar);
+            } else {
+                return s.replace(reXmlSpecial, replaceUnsafeChar);
+            }
         } else {
             return s;
         }
@@ -7646,6 +7737,8 @@
     var normalizeURI$1 = normalizeURI;
     var unescapeString$1 = unescapeString;
 
+    var XRegExp = require('xregexp');
+
     // Constants for character codes:
 
     var C_NEWLINE = 10;
@@ -7663,6 +7756,12 @@
     var C_COLON = 58;
     var C_SINGLEQUOTE = 39;
     var C_DOUBLEQUOTE = 34;
+    var C_AT_SIGN = 64;
+    var C_SEMICOLON = 59;
+    var C_UPPER_X = 88;
+    var C_LOWER_X = 120;
+    var C_TILDE = 126;
+    var C_NUMBER_SIGN = 35;
 
     // Some regexps used in inline parser:
 
@@ -7675,6 +7774,8 @@
     var rePunctuation = new RegExp(
         /[!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~\xA1\xA7\xAB\xB6\xB7\xBB\xBF\u037E\u0387\u055A-\u055F\u0589\u058A\u05BE\u05C0\u05C3\u05C6\u05F3\u05F4\u0609\u060A\u060C\u060D\u061B\u061E\u061F\u066A-\u066D\u06D4\u0700-\u070D\u07F7-\u07F9\u0830-\u083E\u085E\u0964\u0965\u0970\u0AF0\u0DF4\u0E4F\u0E5A\u0E5B\u0F04-\u0F12\u0F14\u0F3A-\u0F3D\u0F85\u0FD0-\u0FD4\u0FD9\u0FDA\u104A-\u104F\u10FB\u1360-\u1368\u1400\u166D\u166E\u169B\u169C\u16EB-\u16ED\u1735\u1736\u17D4-\u17D6\u17D8-\u17DA\u1800-\u180A\u1944\u1945\u1A1E\u1A1F\u1AA0-\u1AA6\u1AA8-\u1AAD\u1B5A-\u1B60\u1BFC-\u1BFF\u1C3B-\u1C3F\u1C7E\u1C7F\u1CC0-\u1CC7\u1CD3\u2010-\u2027\u2030-\u2043\u2045-\u2051\u2053-\u205E\u207D\u207E\u208D\u208E\u2308-\u230B\u2329\u232A\u2768-\u2775\u27C5\u27C6\u27E6-\u27EF\u2983-\u2998\u29D8-\u29DB\u29FC\u29FD\u2CF9-\u2CFC\u2CFE\u2CFF\u2D70\u2E00-\u2E2E\u2E30-\u2E42\u3001-\u3003\u3008-\u3011\u3014-\u301F\u3030\u303D\u30A0\u30FB\uA4FE\uA4FF\uA60D-\uA60F\uA673\uA67E\uA6F2-\uA6F7\uA874-\uA877\uA8CE\uA8CF\uA8F8-\uA8FA\uA8FC\uA92E\uA92F\uA95F\uA9C1-\uA9CD\uA9DE\uA9DF\uAA5C-\uAA5F\uAADE\uAADF\uAAF0\uAAF1\uABEB\uFD3E\uFD3F\uFE10-\uFE19\uFE30-\uFE52\uFE54-\uFE61\uFE63\uFE68\uFE6A\uFE6B\uFF01-\uFF03\uFF05-\uFF0A\uFF0C-\uFF0F\uFF1A\uFF1B\uFF1F\uFF20\uFF3B-\uFF3D\uFF3F\uFF5B\uFF5D\uFF5F-\uFF65]|\uD800[\uDD00-\uDD02\uDF9F\uDFD0]|\uD801\uDD6F|\uD802[\uDC57\uDD1F\uDD3F\uDE50-\uDE58\uDE7F\uDEF0-\uDEF6\uDF39-\uDF3F\uDF99-\uDF9C]|\uD804[\uDC47-\uDC4D\uDCBB\uDCBC\uDCBE-\uDCC1\uDD40-\uDD43\uDD74\uDD75\uDDC5-\uDDC9\uDDCD\uDDDB\uDDDD-\uDDDF\uDE38-\uDE3D\uDEA9]|\uD805[\uDCC6\uDDC1-\uDDD7\uDE41-\uDE43\uDF3C-\uDF3E]|\uD809[\uDC70-\uDC74]|\uD81A[\uDE6E\uDE6F\uDEF5\uDF37-\uDF3B\uDF44]|\uD82F\uDC9F|\uD836[\uDE87-\uDE8B]/
     );
+
+    var reLinkSize = new RegExp('^=([0-9]*)x([0-9]*)');
 
     var reLinkTitle = new RegExp(
         '^(?:"(' +
@@ -7690,7 +7791,8 @@
             "|[^()\\x00])*\\))"
     );
 
-    var reLinkDestinationBraces = /^(?:<(?:[^<>\n\\\x00]|\\.)*>)/;
+    var reLinkDestinationBraces = new RegExp(
+        '^(?:[<](?:[^<>\\t\\n\\\\\\x00]' + '|' + ESCAPED_CHAR + '|' + '\\\\)*[>])');
 
     var reEscapable = new RegExp("^" + ESCAPABLE$1);
 
@@ -7720,10 +7822,25 @@
 
     var reSpaceAtEndOfLine = /^ *(?:\n|$)/;
 
-    var reLinkLabel = /^\[(?:[^\\\[\]]|\\.){0,1000}\]/;
+    var reNonWord = /^\W+$/;
+
+    var reLinkLabel = new RegExp('^\\[(?:[^\\\\\\[\\]]|' + ESCAPED_CHAR +
+        '|\\\\){0,1000}\\]');
+
+    var reDelimChar = /^[*_~]/;
+
+    // Adapted from https://github.com/gregjacobs/Autolinker.js
+    var emailAlphaNumericChars = '\\p{L}\\p{Nd}';
+    var emailSpecialCharacters = '!#$%&\'*+\\-\\/=?^_`{|}~';
+    var emailRestrictedSpecialCharacters = '\\s(),:;<>@\\[\\]';
+    var emailValidCharacters = emailAlphaNumericChars + emailSpecialCharacters;
+    var emailValidRestrictedCharacters = emailValidCharacters + emailRestrictedSpecialCharacters;
+
+    // Matches a proper email address
+    var emailStartPattern = '(?:[' + emailValidCharacters + '](?:[' + emailValidCharacters + ']|\\.(?!\\.|@))*|\\"[' + emailValidRestrictedCharacters + '.]+\\")@';
 
     // Matches a string of non-special characters.
-    var reMain = /^[^\n`\[\]\\!<&*_'"]+/m;
+    var reMain = XRegExp.cache('^[\\s\\S]+?(?=[\\n`\\[\\]\\\\!<&*_\'"@:;xX~#]|[a-z][a-z0-9.+-]{1,31}:|www\\d{0,3}\\.|[' + emailValidCharacters + '.]{1,64}@|$)');
 
     var text = function(s) {
         var node = new Node("text");
@@ -7752,13 +7869,35 @@
     // If re matches at current position in the subject, advance
     // position in subject and return the match; otherwise return null.
     var match = function(re) {
+        var m = this.matchRegex(re);
+        if (m === null) {
+            return null;
+        } else {
+            return m[0];
+        }
+    };
+
+    var matchRegex = function(re) {
         var m = re.exec(this.subject.slice(this.pos));
         if (m === null) {
             return null;
         } else {
             this.pos += m.index + m[0].length;
-            return m[0];
+            return m;
         }
+    };
+
+    var tryMatch = function(re) {
+        var m = re.exec(this.subject.slice(this.pos));
+        if (m === null) {
+            return null;
+        } else {
+            return m;
+        }
+    };
+
+    var acceptMatch = function(m) {
+        this.pos += m.index + m[0].length;
     };
 
     // Returns the code for the character at the current subject position, or -1
@@ -7808,6 +7947,11 @@
                 } else {
                     node._literal = contents;
                 }
+
+                if (block.type === 'table_cell') {
+                    node._literal = node._literal.replace(/\\\|/g, '|');
+                }
+
                 block.appendChild(node);
                 return true;
             }
@@ -7823,16 +7967,12 @@
     // or a literal backslash to the block's children.  Assumes current character
     // is a backslash.
     var parseBackslash = function(block) {
-        var subj = this.subject;
         var node;
         this.pos += 1;
         if (this.peek() === C_NEWLINE) {
             this.pos += 1;
             node = new Node("linebreak");
             block.appendChild(node);
-        } else if (reEscapable.test(subj.charAt(this.pos))) {
-            block.appendChild(text(subj.charAt(this.pos)));
-            this.pos += 1;
         } else {
             block.appendChild(text("\\"));
         }
@@ -7892,7 +8032,7 @@
             before_is_whitespace,
             before_is_punctuation;
 
-        if (cc === C_SINGLEQUOTE || cc === C_DOUBLEQUOTE) {
+        if (cc === C_SINGLEQUOTE || cc === C_DOUBLEQUOTE || cc === C_TILDE) {
             numdelims++;
             this.pos++;
         } else {
@@ -7942,7 +8082,7 @@
         return { numdelims: numdelims, can_open: can_open, can_close: can_close };
     };
 
-    // Handle a delimiter marker for emphasis or a quote.
+    // Handle a delimiter marker for emphasis, quotes, or deleted text.
     var handleDelim = function(cc, block) {
         var res = this.scanDelims(cc);
         if (!res) {
@@ -7966,7 +8106,7 @@
         // Add entry to stack for this opener
         if (
             (res.can_open || res.can_close) &&
-            (this.options.smart || cc !== C_SINGLEQUOTE || cc !== C_DOUBLEQUOTE)
+            (this.options.smart || (cc !== C_SINGLEQUOTE && cc !== C_DOUBLEQUOTE))
         ) {
             this.delimiters = {
                 cc: cc,
@@ -8136,6 +8276,29 @@
         }
     };
 
+    var parseLinkSize = function() {
+        var size_matches = this.match(reLinkSize);
+
+        if (size_matches === null) {
+            return null;
+        } else {
+            var detailed = size_matches.match(reLinkSize);
+            var width = detailed[1];
+            var height = detailed[2];
+            var size = {};
+
+            if (width) {
+                size.width = parseInt(width);
+            }
+
+            if (height) {
+                size.height = parseInt(height);
+            }
+
+            return size;
+        }
+    };
+
     // Attempt to parse link title (sans quotes), returning the string
     // or null if no match.
     var parseLinkTitle = function() {
@@ -8153,9 +8316,6 @@
     var parseLinkDestination = function() {
         var res = this.match(reLinkDestinationBraces);
         if (res === null) {
-            if (this.peek() === C_LESSTHAN) {
-                return null;
-            }
             // TODO handrolled parser; res should be null or the string
             var savepos = this.pos;
             var openparens = 0;
@@ -8202,7 +8362,9 @@
     // Attempt to parse a link label, returning number of characters parsed.
     var parseLinkLabel = function() {
         var m = this.match(reLinkLabel);
-        if (m === null || m.length > 1001) {
+        // Note:  our regex will allow something of form [..\];
+        // we disallow it here rather than using lookahead in the regex:
+        if (m === null || m.length > 1001 || /[^\\]\\\]$/.exec(m)) {
             return 0;
         } else {
             return m.length;
@@ -8249,6 +8411,7 @@
         var startpos;
         var is_image;
         var dest;
+        var size;
         var title;
         var matched = false;
         var reflabel;
@@ -8287,6 +8450,8 @@
             if (
                 this.spnl() &&
                 (dest = this.parseLinkDestination()) !== null &&
+                this.spnl() &&
+                (size = this.parseLinkSize() || true) &&
                 this.spnl() &&
                 // make sure there's a space before the title:
                 ((reWhitespaceChar.test(this.subject.charAt(this.pos - 1)) &&
@@ -8333,6 +8498,7 @@
             var node = new Node(is_image ? "image" : "link");
             node._destination = dest;
             node._title = title || "";
+            node._size = size;
 
             var tmp, next;
             tmp = opener.node._next;
@@ -8395,6 +8561,205 @@
         if ((m = this.match(reEntityHere))) {
             block.appendChild(text(lib_10(m)));
             return true;
+        } else {
+            return false;
+        }
+    };
+
+    // Attempt to parse a url
+    var reUrl = XRegExp.cache('^(?:[A-Za-z][A-Za-z\\d-.+]*:(?:\\/{1,3}|[\\pL\\d%])|www\\d{0,3}[.]|[\\pL\\d.\\-]+[.]\\pL{2,4}\\/)(?:\\[[\\da-f:]+\\]|[^\\s`!()\\[\\]{;:\'",<>?«»“”‘’*_]|[*_]+(?=[^_*\\s])|[`!\\[\\]{;:\'",<>?«»“”‘’](?=[^\\s()<>])|\\((?:[^\\s()<>]|(?:\\([^\\s()<>]+\\)))*\\))+', 'i');
+    var parseUrl = function(block) {
+        if (this.brackets) {
+            // Don't perform autolinking while inside an explicit link
+            return false;
+        }
+
+        var m;
+        if ((m = this.tryMatch(reUrl))) {
+            // Only link urls after non-word, non-formatting characters
+            if (this.pos !== 0 && this.subject[this.pos - 1] !== '_' && !reNonWord.test(this.subject[this.pos - 1])) {
+                return false;
+            }
+
+            // Step back to remove trailing punctuation like how GitHub does
+            // https://github.com/github/cmark/blob/master/extensions/autolink.c#L58
+            var url = m[0];
+            while ((/[?!.,,:*_~'"]$/).test(url)) {
+                url = url.substring(0, url.length - 1);
+            }
+
+            if (this.options.urlFilter && !this.options.urlFilter(url)) {
+                return false;
+            }
+
+            this.pos += m.index + url.length;
+
+            var node = new Node('link');
+            node._destination = normalizeURI$1(url);
+            node._title = '';
+            node.appendChild(text(url));
+            block.appendChild(node);
+
+            return true;
+        } else {
+            return false;
+        }
+    };
+
+    // Attempt to parse an at mention
+    var reAtMention = /^@([a-z0-9._-]*)/i;
+    var parseAtMention = function(block) {
+        if (this.brackets) {
+            // Don't perform autolinking while inside an explicit link
+            return false;
+        }
+
+        var m;
+        if ((m = this.tryMatch(reAtMention))) {
+            // Only allow at mentions after non-word characters
+            if (this.pos === 0 || reNonWord.test(this.subject[this.pos - 1])) {
+                this.acceptMatch(m);
+
+                // It's up to the renderer to determine what part of this is actually a username
+                var node = new Node('at_mention');
+                node._mentionName = m[1];
+                node.appendChild(text(m[0]));
+                block.appendChild(node);
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    };
+
+    // Attempt to parse a named emoji
+    var reEmoji = /^:([a-z0-9_\-+]+):\B/i;
+    var parseEmoji = function(block) {
+        var m;
+        if ((m = this.tryMatch(reEmoji))) {
+            // Only allow emojis after non-word characters
+            if (this.pos === 0 || reNonWord.test(this.subject[this.pos - 1])) {
+                this.acceptMatch(m);
+
+                // It's up to the renderer to determine if this is a real emoji
+                var node = new Node('emoji');
+                node._literal = m[0];
+                node._emojiName = m[1];
+                node.appendChild(text(m[0]));
+                block.appendChild(node);
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    };
+
+    // Attempt to parse an emoticon (eg. :D, <3)
+    var reEmoticon = /^(?:(:-?\))|(;-?\))|(:o)|(:-o)|(:-?])|(:-?d)|(x-d)|(:-?p)|(:-?[[@])|(:-?\()|(:['’]-?\()|(:-?\/)|(:-?s)|(:-?\|)|(:-?\$)|(:-x)|(<3|&lt;3)|(<\/3|&lt;\/3))(?=$|\s|[*_~])/i;
+    var EMOTICONS = [
+        'slightly_smiling_face',
+        'wink',
+        'open_mouth',
+        'scream',
+        'smirk',
+        'smile',
+        'stuck_out_tongue_closed_eyes',
+        'stuck_out_tongue',
+        'rage',
+        'slightly_frowning_face',
+        'cry',
+        'confused',
+        'confounded',
+        'neutral_face',
+        'flushed',
+        'mask',
+        'heart',
+        'broken_heart'
+    ];
+    var parseEmoticon = function(block) {
+        var m;
+        if ((m = this.tryMatch(reEmoticon))) {
+            // Only allow emoticons after whitespace or a delimiter
+            if (this.pos === 0 || reWhitespaceChar.test(this.subject[this.pos - 1]) || reDelimChar.test(this.subject[this.pos - 1])) {
+                this.acceptMatch(m);
+
+                var node = new Node('emoji');
+                node._literal = m[0];
+
+                // Capture groups in the regex correspond to entries in EMOTICONS
+                for (var i = 0; i < EMOTICONS.length; i++) {
+                    if (m[i + 1]) {
+                        node._emojiName = EMOTICONS[i];
+                    }
+                }
+
+                node.appendChild(text(m[0]));
+                block.appendChild(node);
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    };
+
+    var reEmail = XRegExp.cache('^' + emailStartPattern + '[\\pL\\d.\\-]+[.]\\pL{2,4}(?=$|[^\\p{L}])');
+    var parseEmail = function(block) {
+        if (this.brackets) {
+            // Don't perform autolinking while inside an explicit link
+            return false;
+        }
+
+        var m;
+        if ((m = this.tryMatch(reEmail))) {
+            // Only allow at mentions after non-word characters
+            if (this.pos === 0 || reNonWord.test(this.subject[this.pos - 1])) {
+                this.acceptMatch(m);
+
+                var dest = m[0];
+
+                var node = new Node('link');
+                node._destination = normalizeURI$1('mailto:' + dest);
+                node._title = '';
+
+                node.appendChild(text(m[0]));
+                block.appendChild(node);
+                return true;
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    };
+
+    var reHashtag = XRegExp.cache('^#(\\pL[\\pL\\d\\-_.]*[\\pL\\d])');
+    var parseHashtag = function(block) {
+        if (this.brackets) {
+            // Don't perform autolinking while inside an explicit link
+            return false;
+        }
+
+        var m;
+        if ((m = this.tryMatch(reHashtag, true))) {
+            // Only allow hashtags after  anon-word character or a delimiter and only allow hashtags that are long enough
+            if ((this.pos === 0 || reNonWord.test(this.subject[this.pos - 1]) || reDelimChar.test(this.subject[this.pos - 1])) &&
+                m[1].length >= this.options.minimumHashtagLength) {
+                this.acceptMatch(m);
+
+                var node = new Node('hashtag');
+                node._hashtag = m[1];
+                node.appendChild(text(m[0]));
+                block.appendChild(node);
+                return true;
+            } else {
+                return false;
+            }
         } else {
             return false;
         }
@@ -8495,7 +8860,7 @@
         this.spnl();
 
         dest = this.parseLinkDestination();
-        if (dest === null) {
+        if (dest === null || dest.length === 0) {
             this.pos = startpos;
             return 0;
         }
@@ -8583,18 +8948,42 @@
                 res = this.parseCloseBracket(block);
                 break;
             case C_LESSTHAN:
-                res = this.parseAutolink(block) || this.parseHtmlTag(block);
+                res = this.parseAutolink(block) || this.parseHtmlTag(block) || this.parseEmoticon(block);
                 break;
             case C_AMPERSAND:
-                res = this.parseEntity(block);
+                res = this.parseEmoticon(block) || this.parseEntity(block);
                 break;
-            default:
-                res = this.parseString(block);
+            case C_AT_SIGN:
+                res = this.parseAtMention(block);
                 break;
+            case C_TILDE:
+                res = this.handleDelim(c, block);
+                break;
+            case C_COLON:
+                res = this.parseEmoji(block) || this.parseEmoticon(block);
+                break;
+            case C_SEMICOLON:
+                res = this.parseEmoticon(block);
+                break;
+            case C_UPPER_X:
+            case C_LOWER_X:
+                res = this.parseEmoticon(block);
+                break;
+            case C_NUMBER_SIGN:
+                res = this.parseHashtag(block);
         }
+
         if (!res) {
-            this.pos += 1;
-            block.appendChild(text(fromCodePoint(c)));
+            res = this.parseEmail(block);
+        }
+
+        if (!res) {
+            res = this.parseUrl(block);
+        }
+
+        // parseString always captures at least a single character
+        if (!res) {
+            res = this.parseString(block);
         }
 
         return true;
@@ -8621,6 +9010,9 @@
             pos: 0,
             refmap: {},
             match: match,
+            matchRegex: matchRegex,
+            tryMatch: tryMatch,
+            acceptMatch: acceptMatch,
             peek: peek,
             spnl: spnl,
             parseBackticks: parseBackticks,
@@ -8629,6 +9021,7 @@
             parseHtmlTag: parseHtmlTag,
             scanDelims: scanDelims,
             handleDelim: handleDelim,
+            parseLinkSize: parseLinkSize,
             parseLinkTitle: parseLinkTitle,
             parseLinkDestination: parseLinkDestination,
             parseLinkLabel: parseLinkLabel,
@@ -8638,6 +9031,12 @@
             addBracket: addBracket,
             removeBracket: removeBracket,
             parseEntity: parseEntity,
+            parseUrl: parseUrl,
+            parseAtMention: parseAtMention,
+            parseEmoji: parseEmoji,
+            parseEmoticon: parseEmoticon,
+            parseEmail: parseEmail,
+            parseHashtag: parseHashtag,
             parseString: parseString,
             parseNewline: parseNewline,
             parseReference: parseReference,
@@ -8660,7 +9059,7 @@
 
     var reHtmlBlockOpen = [
         /./, // dummy for 0
-        /^<(?:script|pre|style)(?:\s|>|$)/i,
+        /^<(?:script|pre|textarea|style)(?:\s|>|$)/i,
         /^<!--/,
         /^<[?]/,
         /^<![A-Z]/,
@@ -8671,7 +9070,7 @@
 
     var reHtmlBlockClose = [
         /./, // dummy for 0
-        /<\/(?:script|pre|style)>/i,
+        /<\/(?:script|pre|textarea|style)>/i,
         /-->/,
         /\?>/,
         />/,
@@ -8680,7 +9079,9 @@
 
     var reThematicBreak = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})[ \t]*$/;
 
-    var reMaybeSpecial = /^[#`~*+_=<>0-9-]/;
+    var reMaybeSpecial = /^[#`~*+_=<>0-9-|]/;
+
+    var reMaybeDelimiterRow = /[|\-]/;
 
     var reNonSpace = /[^ \t\f\v\r\n]/;
 
@@ -8690,13 +9091,19 @@
 
     var reATXHeadingMarker = /^#{1,6}(?:[ \t]+|$)/;
 
-    var reCodeFence = /^`{3,}(?!.*`)|^~{3,}/;
+    var reCodeFence = /^`{3,}(?!.*`)|^~{3,}(?!.*~)/;
 
     var reClosingCodeFence = /^(?:`{3,}|~{3,})(?= *$)/;
 
     var reSetextHeadingLine = /^(?:=+|-+)[ \t]*$/;
 
     var reLineEnding = /\r\n|\n|\r/;
+
+    var reTableDelimiter = /^[ \t]{0,3}((?:\|[ \t]*)?:?-+:?[ \t]*(?:\|(?:[ \t]*:?-+:?[ \t]*)?)*\|?)$/;
+
+    var reTableRow = /^(\|?)(?:(?:\\\||[^|])*\|?)+$/;
+
+    var reTablePipeSpaceEnding = /\|\s+$/;
 
     // Returns true if string contains only space characters.
     var isBlank = function(s) {
@@ -8715,6 +9122,10 @@
         }
     };
 
+    var trimSpacesAfterPipe = function(ln) {
+        return ln.replace(reTablePipeSpaceEnding,"|");
+    };
+
     // DOC PARSER
 
     // These are methods of a Parser object, defined below.
@@ -8727,11 +9138,9 @@
                 return true;
             }
             var t = block.type;
-            if (!block._lastLineChecked && (t === "list" || t === "item")) {
-                block._lastLineChecked = true;
+            if (t === "list" || t === "item") {
                 block = block._lastChild;
             } else {
-                block._lastLineChecked = true;
                 break;
             }
         }
@@ -9076,6 +9485,84 @@
             },
             acceptsLines: true
         },
+        table: {
+            continue: function(parser) {
+                if (parser.blank) {
+                    // next line is blank so the table has ended
+                    return 1;
+                } else if (parser.indented) {
+                    // next line is indented so its part of a list or code block
+                    return 1;
+                }
+
+                return 0;
+            },
+            finalize: function(parser, block) {
+                var numberOfColumns = block.alignColumns.length;
+
+                for (var row = block.firstChild; row; row = row.next) {
+                    var i = 0;
+                    for (var cell = row.firstChild; cell; cell = cell.next) {
+                        // copy column alignment to each cell
+                        cell.align = block.alignColumns[i];
+
+                        i += 1;
+
+                        // if there's more columns in a row than the header row, GitHub cuts them off
+                        if (i + 1 > numberOfColumns) {
+                            cell._next = null;
+                            row._lastChild = cell;
+                            break;
+                        }
+                    }
+
+                    // GitHub adds extra empty cells to make sure all rows are equal width
+                    while (i < numberOfColumns) {
+                        var cell = new Node("table_cell");
+
+                        cell._string_content = "";
+                        cell.isHeading = row.isHeading;
+                        cell.align = block.alignColumns[i];
+
+                        row.appendChild(cell);
+                        i += 1;
+                    }
+                }
+            },
+            canContain: function(t) { return (t === "table_row"); },
+            acceptsLines: false
+        },
+        table_row: {
+            continue: function(parser) {
+                if (parser.blank) {
+                    return 2;
+                }
+
+                return 1;
+            },
+            finalize: function(parser, block) {
+                // mark the header row since it'll have special treatment when rendering
+                if (block === block.parent.firstChild) {
+                    block.isHeading = true;
+
+                    for (var cell = block.firstChild; cell; cell = cell.next) {
+                        cell.isHeading = true;
+                    }
+                }
+            },
+            canContain: function(t) { return (t === "table_cell"); },
+            acceptsLines: false
+        },
+        table_cell: {
+            continue: function() {
+                return 1;
+            },
+            finalize: function() {
+                return;
+            },
+            canContain: function() { return false; },
+            acceptsLines: false
+        },
         paragraph: {
             continue: function(parser) {
                 return parser.blank ? 1 : 0;
@@ -9313,8 +9800,127 @@
             } else {
                 return 0;
             }
+        },
+
+        // table
+        function(parser, container) {
+            if (container.type !== "document") {
+                return 0;
+            }
+
+
+            if (parser.indented) {
+                return 0;
+            }
+
+            if (!parser.nextLine) {
+                // tables require at least two rows (header and delimiter)
+                return 0;
+            }
+
+            // check for a delimiter first since it's stricter than the header row
+            var nextLine = trimSpacesAfterPipe(parser.nextLine);
+            var delimiterMatch = reTableDelimiter.exec(nextLine);
+            if (!delimiterMatch || delimiterMatch[0].indexOf("|") === -1) {
+                return 0;
+            }
+
+            var currentLine = trimSpacesAfterPipe(parser.currentLine);
+            var headerMatch = reTableRow.exec(currentLine.slice(parser.nextNonspace));
+            if (!headerMatch) {
+                return 0;
+            }
+
+            var delimiterCells = parseTableCells(delimiterMatch[1]);
+            var headerCells = parseTableCells(headerMatch[0]);
+
+            if (delimiterCells.length !== headerCells.length) {
+                // the first two rows must be the same length for this to be considered a table
+                return 0;
+            }
+
+            parser.closeUnmatchedBlocks();
+
+            parser.advanceNextNonspace();
+            parser.addChild("table", parser.offset);
+
+            // store the alignments of the columns and then skip the delimiter line since we"ve
+            // gotten what we need from it
+            parser.tip.alignColumns = delimiterCells.map(getCellAlignment);
+
+            parser.skipNextLine();
+
+            return 1;
+        },
+
+        // table_row
+        function(parser, container) {
+            if (container.type !== "table") {
+                return 0;
+            }
+
+            if (parser.blank) {
+                return 2;
+            }
+
+            var rowMatch = reTableRow.exec(parser.currentLine.slice(parser.nextNonspace));
+            if (!rowMatch) {
+                return 0;
+            }
+
+            parser.closeUnmatchedBlocks();
+            parser.advanceNextNonspace();
+
+            parser.addChild("table_row", parser.offset);
+
+            // advance past leading | if one exists
+            parser.advanceOffset(rowMatch[1].length, false);
+
+            // parse the row into cells
+            var cells = parseTableCells(rowMatch[0]);
+            var length = cells.length;
+            for (var i = 0; i < length; i++) {
+                parser.addChild("table_cell", parser.offset);
+
+                parser.tip._string_content = cells[i].trim();
+
+                parser.advanceOffset(cells[i].length + 1);
+            }
+
+            return 2;
         }
     ];
+
+    var parseTableCells = function(row) {
+        // remove starting pipe to make life easier
+        row = row.replace(/^\|/, "");
+
+        var reTableCell = /\||((?:\\\||[^|])+)\|?/g;
+
+        var match;
+        var cells = [];
+        while (match = reTableCell.exec(row)) {
+            cells.push(match[1] || "");
+        }
+
+        return cells;
+    };
+
+    var getCellAlignment = function(cell) {
+        cell = cell.trim();
+
+        if (cell.charAt(0) === ":") {
+            if (cell.charAt(cell.length - 1) === ":") {
+                return "center";
+            } else {
+                return "left";
+            }
+        } else if (cell.endsWith(":")) {
+            return "right";
+        } else {
+            return "";
+        }
+    };
 
     var advanceOffset = function(count, columns) {
         var currentLine = this.currentLine;
@@ -9377,7 +9983,7 @@
     // Analyze a line of text and update the document appropriately.
     // We parse markdown text by calling this on each line of input,
     // then finalizing the document.
-    var incorporateLine = function(ln) {
+    var incorporateLine = function(ln, nextLn) {
         var all_matched = true;
         var t;
 
@@ -9395,6 +10001,7 @@
         }
 
         this.currentLine = ln;
+        this.nextLine = nextLn;
 
         // For each containing block, try to parse the associated line start.
         // Bail out on failure: container will point to the last matching block.
@@ -9437,7 +10044,9 @@
             // this is a little performance optimization:
             if (
                 !this.indented &&
-                !reMaybeSpecial.test(ln.slice(this.nextNonspace))
+                !reMaybeSpecial.test(ln.slice(this.nextNonspace)) &&
+                (container.type !== "table" && container.type !== "table_row") &&
+                (nextLn && !reMaybeDelimiterRow.test(nextLn.slice(this.nextNonspace)))
             ) {
                 this.advanceNextNonspace();
                 break;
@@ -9469,7 +10078,7 @@
         // appropriate container.
 
         // First check for a lazy paragraph continuation:
-        if (!this.allClosed && !this.blank && this.tip.type === "paragraph") {
+        if (!this.allClosed && !this.blank && this.tip.type === "paragraph" && !(this.tip._parent.type === "item" && this.indent === 0)) {
             // lazy paragraph continuation
             this.addLine();
         } else {
@@ -9528,6 +10137,10 @@
         this.lastLineLength = ln.length;
     };
 
+    var skipNextLine = function() {
+        this.shouldSkipNextLine = true;
+    };
+
     // Finalize a block.  Close it and do any necessary postprocessing,
     // e.g. creating string_content from strings, setting the 'tight'
     // or 'loose' status of a list, and parsing the beginnings
@@ -9553,7 +10166,7 @@
         while ((event = walker.next())) {
             node = event.node;
             t = node.type;
-            if (!event.entering && (t === "paragraph" || t === "heading")) {
+            if (!event.entering && (t === "paragraph" || t === "heading" || t === "table_cell")) {
                 this.inlineParser.parse(node);
             }
         }
@@ -9567,6 +10180,20 @@
         return doc;
     };
 
+    var split = function(input, regex) {
+        var l = [''];
+        var count = 0;
+        for (var i = 0; i < input.length; i++) {
+            if (regex.test(input[i]) && !regex.test(input[i + 1])) {
+                l.push('');
+                count += 1;
+            } else {
+                l[count] += input[i];
+            }
+        }
+        return l;
+    };
+
     // The main parsing function.  Returns a parsed document AST.
     var parse = function(input) {
         this.doc = new Document();
@@ -9578,10 +10205,11 @@
         this.column = 0;
         this.lastMatchedContainer = this.doc;
         this.currentLine = "";
+        this.shouldSkipNextLine = false;
         if (this.options.time) {
             console.time("preparing input");
         }
-        var lines = input.split(reLineEnding);
+        var lines = split(input, reLineEnding);
         var len = lines.length;
         if (input.charCodeAt(input.length - 1) === C_NEWLINE$1) {
             // ignore last blank line created by final newline
@@ -9594,7 +10222,15 @@
             console.time("block parsing");
         }
         for (var i = 0; i < len; i++) {
-            this.incorporateLine(lines[i]);
+            if (this.shouldSkipNextLine) {
+                this.shouldSkipNextLine = false;
+                continue;
+            }
+            if (lines[i].includes(">") && lines[i+1]) { // When you have softbreak after blockQuote
+                lines.splice(i+1, 0, "");
+                len++;
+            }
+            this.incorporateLine(lines[i], lines[i + 1]);
         }
         while (this.tip) {
             this.finalize(this.tip, len);
@@ -9641,11 +10277,12 @@
             addLine: addLine,
             addChild: addChild,
             incorporateLine: incorporateLine,
+            skipNextLine: skipNextLine,
             finalize: finalize,
             processInlines: processInlines,
             closeUnmatchedBlocks: closeUnmatchedBlocks,
             parse: parse,
-            options: options || {}
+            options: options || { minimumHashtagLength: 3 }
         };
     }
 
@@ -9791,13 +10428,70 @@
         }
     }
 
+    function at_mention(node, entering) {
+      if (entering) {
+          var attrs = this.attrs(node);
+
+          if (node.mentionName) {
+              attrs.push(["data-mention-name", this.esc(node.mentionName, true)]);
+          }
+
+          this.tag("span", attrs);
+      } else {
+          this.tag("/span");
+      }
+    }
+
+    function channel_link(node, entering) {
+      if (entering) {
+          var attrs = this.attrs(node);
+
+          if (node.channelName) {
+              attrs.push(["data-channel-name", this.esc(node.channelName, true)]);
+          }
+
+          this.tag("span", attrs);
+      } else {
+          this.tag("/span");
+      }
+    }
+
+    function emoji(node, entering) {
+      if (entering) {
+          var attrs = this.attrs(node);
+
+          if (node.emojiName) {
+              attrs.push(["data-emoji-name", this.esc(node.emojiName, true)]);
+              attrs.push(["data-literal", this.esc(node.literal, true)]);
+          }
+
+          this.tag("span", attrs);
+      } else {
+          this.tag("/span");
+      }
+    }
+
+    function hashtag(node, entering) {
+      if (entering) {
+          var attrs = this.attrs(node);
+
+          if (node.hashtag) {
+              attrs.push(["data-hashtag", this.esc(node.hashtag, true)]);
+          }
+
+          this.tag("span", attrs);
+      } else {
+          this.tag("/span");
+      }
+    }
+
     function image$1(node, entering) {
         if (entering) {
             if (this.disableTags === 0) {
                 if (this.options.safe && potentiallyUnsafe(node.destination)) {
                     this.lit('<img src="" alt="');
                 } else {
-                    this.lit('<img src="' + this.esc(node.destination) + '" alt="');
+                    this.lit('<img src="' + this.esc(node.destination, true) + '" alt="');
                 }
             }
             this.disableTags += 1;
@@ -9805,7 +10499,16 @@
             this.disableTags -= 1;
             if (this.disableTags === 0) {
                 if (node.title) {
-                    this.lit('" title="' + this.esc(node.title));
+                    this.lit('" title="' + this.esc(node.title, true));
+                }
+                if (node.size) {
+                    if (node.size.width) {
+                      this.lit('" width="' + node.size.width);
+                    }
+            
+                    if (node.size.height) {
+                      this.lit('" height="' + node.size.height);
+                    }
                 }
                 this.lit('" />');
             }
@@ -9818,6 +10521,10 @@
 
     function strong(node, entering) {
         this.tag(entering ? "strong" : "/strong");
+    }
+
+    function del(node, entering) {
+      this.tag(entering ? "del" : "/del");
     }
 
     function paragraph(node, entering) {
@@ -9859,7 +10566,7 @@
         var info_words = node.info ? node.info.split(/\s+/) : [],
             attrs = this.attrs(node);
         if (info_words.length > 0 && info_words[0].length > 0) {
-            attrs.push(["class", "language-" + this.esc(info_words[0])]);
+            attrs.push(["class", "language-" + this.esc(info_words[0], true)]);
         }
         this.cr();
         this.tag("pre");
@@ -9919,6 +10626,63 @@
         }
     }
 
+    function table(node, entering) {
+      var attrs = this.attrs(node);
+      if (entering) {
+        this.cr();
+        this.tag("table", attrs);
+        this.cr();
+      } else {
+        this.tag("/table");
+        this.cr();
+      }
+    }
+
+    function table_row(node, entering) {
+      var attrs = this.attrs(node);
+      if (entering) {
+        if (node === node.parent.firstChild) {
+          this.cr();
+          this.tag("thead");
+          this.cr();
+        } else if (node === node.parent.firstChild.next) {
+          this.cr();
+          this.tag("tbody");
+          this.cr();
+        }
+
+        this.cr();
+        this.tag("tr", attrs);
+        this.cr();
+      } else {
+        this.tag("/tr");
+
+        if (node === node.parent.firstChild) {
+          this.cr(); // we're not consistent about how these tags are laid out because this is what GitHub does
+          this.tag("/thead");
+        } else if (node === node.parent.lastChild) {
+          this.tag("/tbody");
+        }
+      }
+    }
+
+    function table_cell(node, entering) {
+      var attrs = this.attrs(node);
+
+      var tag = node.isHeading ? "th" : "td";
+
+      if (node.align) {
+        attrs.push(["align", node.align]);
+      }
+
+      if (entering) {
+        this.tag(tag, attrs);
+      } else {
+        this.tag("/" + tag);
+        this.cr();
+      }
+    }
+
     function html_inline(node) {
         if (this.options.safe) {
             this.lit("<!-- raw HTML omitted -->");
@@ -9958,7 +10722,7 @@
     /* Helper methods */
 
     function out$1(s) {
-        this.lit(this.esc(s));
+        this.lit(this.esc(s, false));
     }
 
     function attrs(node) {
@@ -9990,9 +10754,14 @@
     HtmlRenderer.prototype.softbreak = softbreak;
     HtmlRenderer.prototype.linebreak = linebreak;
     HtmlRenderer.prototype.link = link;
+    HtmlRenderer.prototype.at_mention = at_mention;
+    HtmlRenderer.prototype.channel_link = channel_link;
+    HtmlRenderer.prototype.emoji = emoji;
+    HtmlRenderer.prototype.hashtag = hashtag;
     HtmlRenderer.prototype.image = image$1;
     HtmlRenderer.prototype.emph = emph;
     HtmlRenderer.prototype.strong = strong;
+    HtmlRenderer.prototype.del = del;
     HtmlRenderer.prototype.paragraph = paragraph;
     HtmlRenderer.prototype.heading = heading;
     HtmlRenderer.prototype.code = code;
@@ -10001,6 +10770,9 @@
     HtmlRenderer.prototype.block_quote = block_quote;
     HtmlRenderer.prototype.list = list;
     HtmlRenderer.prototype.item = item;
+    HtmlRenderer.prototype.table = table;
+    HtmlRenderer.prototype.table_row = table_row;
+    HtmlRenderer.prototype.table_cell = table_cell;
     HtmlRenderer.prototype.custom_inline = custom_inline;
     HtmlRenderer.prototype.custom_block = custom_block;
 
@@ -10105,7 +10877,21 @@
                     case "image":
                         attrs.push(["destination", node.destination]);
                         attrs.push(["title", node.title]);
+                        if (node.size) {
+                            if (node.size.width) {
+                              attr.push(['width', node.size.width]);
+                            }
+                            if (node.size.height) {
+                              attr.push(['height', node.size.height]);
+                            }
+                          }
                         break;
+                    case 'at_mention':
+                        attrs.push(['mention-name', node.mentionName]);
+                        break;
+                    case 'emoji':
+                        attrs.push(['emoji-name', node.emojiName]);
+                        attrs.push(['literal', node.literal]);
                     case "custom_inline":
                     case "custom_block":
                         attrs.push(["on_enter", node.onEnter]);

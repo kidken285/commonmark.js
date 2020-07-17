@@ -8110,8 +8110,8 @@
         ) {
             this.delimiters = {
                 cc: cc,
-                numdelims: numdelims,
-                origdelims: numdelims,
+                numdelims: 1,
+                origdelims: 1,
                 node: node,
                 previous: this.delimiters,
                 next: null,
@@ -8216,7 +8216,7 @@
                         );
 
                         // build contents for new emph element
-                        var emph = new Node(use_delims === 1 ? "emph" : "strong");
+                        var emph = new Node(use_delims === 1 && closercc !== C_ASTERISK ? "emph" : "strong");
 
                         tmp = opener_inl._next;
                         while (tmp && tmp !== closer_inl) {
